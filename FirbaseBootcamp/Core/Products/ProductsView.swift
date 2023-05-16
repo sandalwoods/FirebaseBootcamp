@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import FirebaseFirestore
 
 @MainActor
 final class ProductsViewModel: ObservableObject {
@@ -36,9 +37,11 @@ final class ProductsViewModel: ObservableObject {
     @Published var selectedFilter: FilterOption? = nil
     @Published var selectedCategory: CategoryOption? = nil
     
-//    func getAllProducts() async throws {
-//        self.products = try await ProductsManager.shared.getAllProducts()
-//    }
+    private var lastDocument: DocumentSnapshot? = nil
+    
+    //    func getAllProducts() async throws {
+    //        self.products = try await ProductsManager.shared.getAllProducts()
+    //    }
     
     enum FilterOption: String, CaseIterable {
         case noFilter
@@ -56,15 +59,17 @@ final class ProductsViewModel: ObservableObject {
     
     func filtereSelected(option: FilterOption) async throws {
         self.selectedFilter = option
+        self.products = []
+        self.lastDocument = nil
         self.getProducts()
-//        switch option {
-//        case .noFilter:
-//            self.products = try await ProductsManager.shared.getAllProducts()
-//        case .priceHigh:
-//            self.products = try await ProductsManager.shared.getAllProductsSortedByPrice(descending: true)
-//        case .priceLow:
-//            self.products = try await ProductsManager.shared.getAllProductsSortedByPrice(descending: false)
-//        }
+        //        switch option {
+        //        case .noFilter:
+        //            self.products = try await ProductsManager.shared.getAllProducts()
+        //        case .priceHigh:
+        //            self.products = try await ProductsManager.shared.getAllProductsSortedByPrice(descending: true)
+        //        case .priceLow:
+        //            self.products = try await ProductsManager.shared.getAllProductsSortedByPrice(descending: false)
+        //        }
     }
     
     enum CategoryOption: String, CaseIterable {
@@ -83,6 +88,8 @@ final class ProductsViewModel: ObservableObject {
     
     func categorySelected(option: CategoryOption) async throws {
         self.selectedCategory = option
+        self.products = []
+        self.lastDocument = nil
         self.getProducts()
         //        switch option {
         //        case .noCategory:
@@ -94,7 +101,27 @@ final class ProductsViewModel: ObservableObject {
     
     func getProducts() {
         Task {
-            self.products = try await ProductsManager.shared.getAllProductsByPrice(priceDescending: selectedFilter?.priceDecending, forCategory: selectedCategory?.categoryKey)
+            let (newProducts, lastDocument) = try await ProductsManager.shared.getAllProducts(priceDescending: selectedFilter?.priceDecending, forCategory: selectedCategory?.categoryKey, count: 10, lastDocument: lastDocument)
+            self.products.append(contentsOf: newProducts)
+            if let lastDocument {
+                self.lastDocument = lastDocument
+            }
+        }
+    }
+    
+    func addUserFavoriteProduct(productId: Int) {
+        Task {
+            let authDataResult = try AuthenticationManager.shared.getAuthenticatedUser()
+            try? await UserManager.shared.addUserFavoriteProduct(userId: authDataResult.uid, productId: productId)
+        }
+    }
+    
+    func getProductsByRating() {
+        Task {
+//            let newProducts = try await ProductsManager.shared.getProductsByRating(count: 3, lastRating: products.last?.rating)
+            let (newProducts, lastDocument) = try await ProductsManager.shared.getProductsByRating(count: 3, lastDocument: lastDocument)
+            self.products.append(contentsOf: newProducts)
+            self.lastDocument = lastDocument
         }
     }
 }
@@ -105,8 +132,24 @@ struct ProductsView: View {
     
     var body: some View {
         List {
+            
+//            Button("FETCH MORE OBJECT") {
+//                viewModel.getProductsByRating()
+//            }
             ForEach(viewModel.products) { product in
                 ProductCellView(product: product)
+                    .contextMenu {
+                        Button("Add to favorites") {
+                            viewModel.addUserFavoriteProduct(productId: product.id)
+                        }
+                    }
+                
+                if product == viewModel.products.last {
+                    ProgressView()
+                        .onAppear{
+                            viewModel.getProducts()
+                        }
+                }
             }
         }
         .navigationTitle("Products")
@@ -135,7 +178,7 @@ struct ProductsView: View {
             }
         })
         .onAppear {
-           viewModel.getProducts()
+            viewModel.getProducts()
         }
     }
 }
