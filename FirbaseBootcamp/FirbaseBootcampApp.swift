@@ -19,6 +19,8 @@ struct FirbaseBootcampApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+//            CrashView()
+//            PerformanceView()
         }
     }
 }
